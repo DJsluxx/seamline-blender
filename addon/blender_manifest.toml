@@ -1,0 +1,20 @@
+schema_version = "1.0.0"
+
+id = "vibe_toolkit"
+name = "Vibe Toolkit (scaffold)"
+version = "0.1.0"
+tagline = "Scaffold add-on proving the build/install/test pipeline"
+maintainer = "Vibe Org <noreply@vibe-org.local>"
+type = "add-on"
+
+# No third-party Python deps; pure bpy.
+wheels = []
+
+# Runs fully offline, touches only the current scene's mesh/object data.
+permissions = {}
+
+blender_version_min = "5.0.0"
+
+license = [
+  "SPDX:GPL-2.0-or-later",
+]
