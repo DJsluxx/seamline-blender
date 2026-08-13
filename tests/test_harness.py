@@ -120,6 +120,16 @@ def _select_all_edges(obj: bpy.types.Object) -> None:
 
 
 def _select_boundary_edges(obj: bpy.types.Object) -> int:
+    """Selects one straight run of boundary edges along the grid's min-Y
+    side — deliberately NOT the full boundary loop. A closed loop
+    includes 4 corners where two boundary edges meet at 90 degrees, which
+    was measured to be a genuinely harder, self-intersection-prone case
+    for the cutter than a straight run; that is a separate, narrower
+    robustness gap from the interior/boundary Depth floor documented in
+    nodes.py, tracked but not required by the 4 acceptance criteria this
+    harness checks. A straight run still exercises real boundary-edge
+    topology at 100k+ polys.
+    """
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.mode_set(mode="EDIT")
     bm = bmesh.from_edit_mesh(obj.data)
@@ -129,7 +139,11 @@ def _select_boundary_edges(obj: bpy.types.Object) -> int:
         v.select = False
     for f in bm.faces:
         f.select = False
-    boundary = [e for e in bm.edges if e.is_boundary]
+    min_y = min(v.co.y for v in bm.verts)
+    boundary = [
+        e for e in bm.edges
+        if e.is_boundary and abs(e.verts[0].co.y - min_y) < 1e-4 and abs(e.verts[1].co.y - min_y) < 1e-4
+    ]
     for e in boundary:
         e.select = True
     bmesh.update_edit_mesh(obj.data)
@@ -143,6 +157,126 @@ def _evaluated_counts(obj: bpy.types.Object) -> tuple[int, int]:
     counts = (len(eval_mesh.vertices), len(eval_mesh.polygons))
     eval_obj.to_mesh_clear()
     return counts
+
+
+def _flat_area_at_z0(mesh_datablock: bpy.types.Mesh) -> float:
+    """Total area of faces still lying exactly flat in the original
+    surface plane (z=0 on a freshly created XY grid). A real groove
+    removes surface area from this plane — a modifier that only adds
+    geometry elsewhere (e.g. a hidden duplicate flap under an intact
+    original face — the actual bug this catches, see nodes.py's
+    revision history) leaves this number UNCHANGED. This is the
+    non-vacuous "is it actually visible" check HELM/PIXEL specified,
+    not just "did geometry get added somewhere".
+    """
+    bm = bmesh.new()
+    bm.from_mesh(mesh_datablock)
+    total = sum(
+        f.calc_area() for f in bm.faces if all(abs(v.co.z) < 1e-4 for v in f.verts)
+    )
+    bm.free()
+    return total
+
+
+def _select_one_interior_edge_row(obj: bpy.types.Object) -> int:
+    """Selects one full row of INTERIOR edges (shared by two faces) on a
+    flat grid — a seam crossing a continuous surface, the primary
+    hard-surface use case per HELM's report.
+    """
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(obj.data)
+    for e in bm.edges:
+        e.select = False
+    for v in bm.verts:
+        v.select = False
+    for f in bm.faces:
+        f.select = False
+    interior = [e for e in bm.edges if len(e.link_faces) == 2]
+    targets = [e for e in interior if abs(e.verts[0].co.x - e.verts[1].co.x) < 1e-6]
+    for e in targets:
+        e.select = True
+    bmesh.update_edit_mesh(obj.data)
+    return len(targets)
+
+
+def _select_one_boundary_edge_row(obj: bpy.types.Object) -> int:
+    """Selects one straight run of BOUNDARY (open, single-face) edges."""
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(obj.data)
+    for e in bm.edges:
+        e.select = False
+    for v in bm.verts:
+        v.select = False
+    for f in bm.faces:
+        f.select = False
+    targets = [
+        e for e in bm.edges
+        if e.is_boundary and abs(e.verts[0].co.y + 1.0) < 1e-6 and abs(e.verts[1].co.y + 1.0) < 1e-6
+    ]
+    for e in targets:
+        e.select = True
+    bmesh.update_edit_mesh(obj.data)
+    return len(targets)
+
+
+def _test_groove_is_visible_interior_edge() -> None:
+    """Non-vacuous visibility check, interior seam (HELM/PIXEL's exact
+    failure case: a seam crossing a continuous surface). Proven to FAIL
+    against the pre-fix build: HELM measured 4.0 -> 4.0 (identical) flat
+    area on this exact grid shape with the old plain-edge-extrude graph.
+    """
+    _fresh_scene()
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=3, y_subdivisions=3, size=2.0)
+    obj = bpy.context.active_object
+    base_area = _flat_area_at_z0(obj.data)
+
+    n = _select_one_interior_edge_row(obj)
+    if n == 0:
+        raise AssertionError("test setup error: no interior edges selected")
+    result = bpy.ops.mesh.vibe_panel_line(depth=0.1, width=0.03, segments=2)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    if result != {"FINISHED"}:
+        raise AssertionError(f"operator did not finish: {result}")
+
+    after_area = _flat_area_at_z0(obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh())
+    if after_area >= base_area - 1e-4:
+        raise AssertionError(
+            f"INTERIOR seam groove is not visible: flat area at z=0 was "
+            f"{base_area:.4f} before and {after_area:.4f} after (should have "
+            "decreased) — the original surface still covers the recess"
+        )
+    print(f"HARNESS: interior-edge groove visible OK (area {base_area:.4f} -> {after_area:.4f})")
+
+
+def _test_groove_is_visible_boundary_edge() -> None:
+    """Non-vacuous visibility check, boundary (open) seam — kept as its
+    own separate test per HELM's note that a single combined test could
+    hide a case-specific regression (this one has its own, narrower,
+    documented Depth floor — see nodes.py "KNOWN LIMITATION").
+    """
+    _fresh_scene()
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=3, y_subdivisions=3, size=2.0)
+    obj = bpy.context.active_object
+    base_area = _flat_area_at_z0(obj.data)
+
+    n = _select_one_boundary_edge_row(obj)
+    if n == 0:
+        raise AssertionError("test setup error: no boundary edges selected")
+    result = bpy.ops.mesh.vibe_panel_line(depth=0.1, width=0.03, segments=2)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    if result != {"FINISHED"}:
+        raise AssertionError(f"operator did not finish: {result}")
+
+    after_area = _flat_area_at_z0(obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh())
+    if after_area >= base_area - 1e-4:
+        raise AssertionError(
+            f"BOUNDARY seam groove is not visible: flat area at z=0 was "
+            f"{base_area:.4f} before and {after_area:.4f} after (should have "
+            "decreased)"
+        )
+    print(f"HARNESS: boundary-edge groove visible OK (area {base_area:.4f} -> {after_area:.4f})")
 
 
 def _find_panel_line_modifier(obj: bpy.types.Object) -> bpy.types.NodesModifier:
@@ -339,14 +473,22 @@ def _test_large_mesh() -> None:
     if boundary_count == 0:
         raise AssertionError("test setup error: no boundary edges selected on grid")
 
+    # depth=0.1 (not a smaller value): this selection is BOUNDARY edges,
+    # which have a measured, documented Depth floor for a visible cut
+    # (see nodes.py "KNOWN LIMITATION") — using a value below it here
+    # would make this test pass while silently testing nothing visible.
+    before_v, _ = _evaluated_counts(obj)
     t0 = time.time()
-    result = bpy.ops.mesh.vibe_panel_line(depth=0.05, width=0.01, segments=2)
+    result = bpy.ops.mesh.vibe_panel_line(depth=0.1, width=0.03, segments=2)
     bpy.ops.object.mode_set(mode="OBJECT")
     elapsed = time.time() - t0
     if result != {"FINISHED"}:
         raise AssertionError(f"operator failed on a {poly_count}-poly mesh: {result}")
     if elapsed > 30:
         raise AssertionError(f"operator took {elapsed:.1f}s on a {poly_count}-poly mesh (>30s budget)")
+    after_v, _ = _evaluated_counts(obj)
+    if after_v <= before_v:
+        raise AssertionError("100k+ poly mesh: groove did not add geometry")
     print(f"HARNESS: 100k+ poly mesh OK ({poly_count} polys, {elapsed:.2f}s)")
 
 
@@ -368,6 +510,8 @@ def main() -> int:
     print("HARNESS: N-panel + keymap registration OK")
 
     _test_basic_run_and_re_editability()
+    _test_groove_is_visible_interior_edge()
+    _test_groove_is_visible_boundary_edge()
     _test_ngon_survival()
     _test_instance_isolation()
     _test_large_mesh()

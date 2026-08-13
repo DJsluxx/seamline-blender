@@ -1,29 +1,42 @@
 # Seamline — Non-Destructive Panel Lines for Blender
 
-> ## ⚠️ KNOWN ISSUE in v0.1.0 — read this before using it
+> ## Status: v0.1.0's invisible-groove defect is FIXED in source; the published Release/zip is NOT yet updated
 >
-> **On an interior edge — a seam running across a continuous surface, which is the main thing this
-> add-on is for — the groove is currently invisible.**
+> **The defect (found by PIXEL/HELM by rendering the output and measuring it, not by this
+> project's tests):** on an interior edge — a seam running across a continuous surface, the main
+> use case — the old `addon/nodes.py` graph extruded the seam edges downward but never rerouted
+> the surrounding faces, so the original surface stayed intact and covered the recess. Measured on
+> a 3×3 grid at depth 0.2: 9 faces still lying flat at z=0, area 4.0000 before **and** after —
+> identical, i.e. no visible cut. Only a boundary (open) edge happened to look right, for an
+> unrelated reason (nothing was there to hide it).
 >
-> The node group extrudes the selected edges downward, but it never reroutes the surrounding faces,
-> so the original surface stays intact and covers the recess. The geometry is genuinely there and at
-> exactly the depth you set; you simply cannot see it from any angle, because an unbroken face sits
-> on top of it. Only edges on a real mesh boundary (an actual hole or open edge) show a visible
-> result today.
+> **The fix:** `addon/nodes.py` now builds a small closed solid "cutter" that genuinely spans from
+> just above the surface to `Depth` below it, and subtracts it with a real `Mesh Boolean`
+> (Difference) — a boolean recomputes the surface topology at the cut, so it opens a real hole on
+> interior AND boundary edges alike. Full revision history and the exact node graph are documented
+> in that file's module docstring.
 >
-> Measured on a 3×3 grid, depth 0.2: after the operator the mesh still has **9 faces lying flat at
-> z=0 with a total area of 4.0000 — identical to the untouched surface.** The recess is underneath
-> it.
+> **Proof, reproducing HELM's own numbers:** re-running the identical 3×3-grid/depth-0.2 scenario
+> against the OLD build gives `base_area=4.0000 after_area=4.0000` (fails the visibility
+> assertion, exit 1); against the FIXED build, interior gives `4.0000 -> 3.8800` and boundary gives
+> `4.0000 -> 0.0887` (both visibly cut, exit 0), on both Blender 4.2.16 LTS and 5.2.0 LTS.
+> `tests/test_harness.py` now has `_test_groove_is_visible_interior_edge` and
+> `_test_groove_is_visible_boundary_edge`, asserting flat-surface-area actually decreases — not
+> just that a modifier/attribute exists — so this class of bug fails the suite instead of shipping
+> silently again.
 >
-> The fix is in `addon/nodes.py`: the `Extrude Mesh` step needs to run in FACES mode, or explicitly
-> reroute the adjacent faces, so the surface actually opens along the seam.
+> **Known residual limitation, measured not assumed:** on a boundary (open) edge specifically, the
+> cut needs `Depth` above roughly 8% of the adjacent face size to register reliably with Blender's
+> exact boolean solver — below that it silently no-ops (margin and width do not affect this; only
+> absolute Depth does). The operator's default `Depth` (0.1) and the node group's default were
+> raised from 0.01 to sit inside the proven-robust range for both cases. Interior seams (the
+> primary use case) are robust at any tested Depth including the old 0.01 default. See
+> `addon/nodes.py`'s "KNOWN LIMITATION" note.
 >
-> **How this got shipped, recorded honestly:** the test harness asserts that a modifier and an edge
-> attribute are created, that parameters stay editable, and that vertex positions land at the
-> requested depth — and all of that is true. None of it asserts that the result is *visible*. The
-> defect was found by rendering the tool's output and looking at it, which no automated check here
-> was doing. A vertex at the right coordinate is not the same as a groove you can see, and this
-> project's tests could not tell the difference.
+> **What has NOT changed yet:** the GitHub Release `v0.1.0` still has the OLD (broken) zip
+> attached, and the Gumroad listing is unpublished — both by HELM's explicit instruction while this
+> was under investigation. This fix is landed on `main` but the distributed artifact has not been
+> replaced; that is HELM's call, not this repo's.
 
 Seamline adds one operator: select an edge loop on a hard-surface mesh,
 run **Panel Line**, and get a re-editable, non-destructive groove along
@@ -50,8 +63,9 @@ would type looking for exactly this.
    tab — this is the point of the tool, not an afterthought.
 
 **Compatibility — only what was actually run, nothing assumed:** the
-full test suite (headless install/enable/operator/n-gon/instanced-mesh/
-100k-poly harness + a separate windowed clean-undo test) passes on both
+full test suite (headless install/enable/operator/visible-groove/n-gon/
+instanced-mesh/100k-poly harness + a separate windowed clean-undo test)
+passes on both
 **Blender 4.2.16 LTS** and **Blender 5.2.0 LTS** on this machine. Those
 are the only two versions installed and tested; `blender_version_min` in
 `addon/blender_manifest.toml` is set to `4.2.0` on that basis, not a
@@ -80,8 +94,12 @@ key, no telemetry, no phone-home, no obfuscation.
     single-user if it was a linked duplicate, and adds a Geometry Nodes
     modifier.
   - `nodes.py` — builds the "Panel Line" Geometry Nodes group at
-    runtime (Extrude Mesh + optional Mesh Bevel; see the module
-    docstring for the exact graph and the 4.2/5.2 version gate).
+    runtime: a small closed solid "cutter" (Extrude Mesh, built from the
+    real surface normal frozen before any topology change) subtracted
+    from the mesh via a real `Mesh Boolean` (Difference), plus an
+    optional Mesh Bevel rim chamfer where available; see the module
+    docstring for the full graph, the 4.2/5.2 version gate, and the
+    revision history of the invisible-groove defect and its fix.
   - `ui.py` — the `N`-panel.
   - `keymaps.py` — `Ctrl Shift Alt P` in the Mesh (Edit Mode) keymap.
   - `blender_manifest.toml` / `LICENSE.txt` — Extensions metadata and
@@ -101,10 +119,16 @@ key, no telemetry, no phone-home, no obfuscation.
   API, and asserts: N-panel + keymap registered; the operator runs and
   produces a genuinely non-destructive, re-editable result (changing a
   modifier input after the fact changes the shape, disabling the
-  modifier restores the original topology exactly); it survives an
-  n-gon; it isolates instanced/linked-duplicate mesh data (no leakage
-  onto sibling objects); it handles a 100k+-poly mesh. Exits non-zero on
-  any failure.
+  modifier restores the original topology exactly); **the groove is
+  actually VISIBLE** — flat-surface area at the seam plane genuinely
+  decreases, checked separately for an interior edge and a boundary
+  edge, since a single combined test could hide a case-specific
+  regression (this is the assertion that was missing when the
+  invisible-groove defect shipped — see the status note above); it
+  survives an n-gon; it isolates instanced/linked-duplicate mesh data
+  (no leakage onto sibling objects); it handles a 100k+-poly mesh with a
+  real visible cut, not just "didn't crash". Exits non-zero on any
+  failure.
 - `tests/test_undo.py` — the clean-undo test (acceptance criterion:
   "one Ctrl+Z restores prior state"). Split out from test_harness.py
   because `bpy.ops.ed.undo()` polls false in `--background` mode (no

@@ -78,17 +78,23 @@ class MESH_OT_vibe_panel_line(bpy.types.Operator):
 
     depth: bpy.props.FloatProperty(
         name="Depth",
-        description="How deep the groove is recessed",
-        default=0.01,
+        description=(
+            "How deep the groove is recessed. On a boundary (open) edge, "
+            "very shallow depths relative to the adjacent face size can "
+            "fail to produce a visible cut with Blender's exact boolean "
+            "solver — keep this near the default for boundary seams; "
+            "interior seams are robust at any depth"
+        ),
+        default=0.1,
         min=0.0001,
         precision=4,
         unit="LENGTH",
     )
     width: bpy.props.FloatProperty(
         name="Width",
-        description="Chamfer width of the groove's rim",
-        default=0.004,
-        min=0.0,
+        description="Width of the groove channel (and its chamfer, where supported)",
+        default=0.03,
+        min=0.0001,
         precision=4,
         unit="LENGTH",
     )
