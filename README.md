@@ -89,6 +89,34 @@ key, no telemetry, no phone-home, no obfuscation.
   unchanged, leaves no stray objects, and that `bpy.data.orphans_purge()`
   finds nothing new to purge relative to the factory-startup baseline.
 
+  **Read this before changing that test — two of its assertions were once
+  measuring the wrong thing, and the fixes are deliberate:**
+
+  1. *Scripted undo has different granularity than user undo.* Blender
+     pushes undo steps around user interaction; a run of `bpy.ops` calls
+     from a script does not produce one restorable step per call, so a
+     single `ed.undo()` collapses the whole script and lands back on the
+     **factory-startup snapshot**. Measured here: objects went
+     `1 ['Cube']` → `3 ['Camera','Cube','Light']` across one undo. An
+     assertion of the form `len(bpy.data.objects) == before` therefore
+     fails for reasons that have nothing to do with this add-on. The test
+     now compares against a factory baseline captured up front.
+  2. *Blender's startup file ships its own orphans.* On 5.2 the
+     grease-pencil material `Dots Stroke` has `users == 0` out of the box,
+     so an unconditional `orphans_purge() == 0` assertion fails on a stock
+     datablock. The test now asserts *no NEW orphan appears* relative to
+     that baseline.
+  3. *Post-undo leak checks are vacuous — this was proven, not assumed.*
+     A copy of the add-on was deliberately sabotaged to leak a stray
+     helper object plus a fake-user mesh, and **every post-undo assertion
+     still passed**, because the undo wipes the leak along with everything
+     else. The leak check therefore runs **immediately after the operator
+     and before the undo**, where a leak is actually observable. With that
+     check in place the sabotaged build fails with
+     `operator created stray object(s) ... ['SeamlineHelper']` while the
+     real build passes — which is what makes this suite non-vacuous rather
+     than decorative.
+
 ### Build + test loop
 
 ```powershell
