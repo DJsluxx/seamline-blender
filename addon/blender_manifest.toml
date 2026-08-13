@@ -1,10 +1,10 @@
 schema_version = "1.0.0"
 
-id = "vibe_toolkit"
-name = "Vibe Toolkit (scaffold)"
+id = "seamline"
+name = "Seamline"
 version = "0.1.0"
-tagline = "Scaffold add-on proving the build/install/test pipeline"
-maintainer = "Vibe Org <noreply@vibe-org.local>"
+tagline = "Non-destructive, re-editable panel-line grooves for hard-surface meshes"
+maintainer = "Seamline maintainers <https://github.com/DJsluxx/seamline-blender/issues>"
 type = "add-on"
 
 # No third-party Python deps; pure bpy.
@@ -13,8 +13,11 @@ wheels = []
 # Runs fully offline, touches only the current scene's mesh/object data.
 permissions = {}
 
-blender_version_min = "5.0.0"
+# Tested against Blender 4.2.16 LTS and 5.2.0 LTS on this machine (see
+# README "Compatibility"). Do not lower this without re-running
+# tests/run_multi_version_tests.ps1 against the older target first.
+blender_version_min = "4.2.0"
 
 license = [
-  "SPDX:GPL-2.0-or-later",
+  "SPDX:GPL-3.0-or-later",
 ]

@@ -1,18 +1,37 @@
-"""Sidebar panel for the Vibe Toolkit scaffold."""
+"""Sidebar (N-panel) UI for Seamline."""
 
 import bpy
 
 
 class VIBE_PT_main_panel(bpy.types.Panel):
-    bl_label = "Vibe Toolkit"
+    bl_label = "Seamline"
     bl_idname = "VIBE_PT_main_panel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "Vibe Toolkit"
+    bl_category = "Seamline"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {"EDIT_MESH", "OBJECT"}
 
     def draw(self, context):
         layout = self.layout
-        layout.operator("vibe.grid_array")
+        col = layout.column(align=True)
+
+        if context.mode != "EDIT_MESH":
+            col.label(text="Enter Edit Mode and select", icon="INFO")
+            col.label(text="edges to add a panel line.")
+            return
+
+        col.operator("mesh.vibe_panel_line", icon="MOD_BEVEL")
+        col.separator()
+        col.label(text="Keymap: Ctrl Shift Alt P")
+        col.separator()
+        box = layout.box()
+        box.label(text="Depth / Width / Segments and", icon="MODIFIER")
+        box.label(text="which edges are the seam stay")
+        box.label(text="editable on the 'Panel Line'")
+        box.label(text="modifier afterward.")
 
 
 _CLASSES = (VIBE_PT_main_panel,)

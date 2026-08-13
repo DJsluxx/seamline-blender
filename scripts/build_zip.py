@@ -24,6 +24,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC_DIR = ROOT / "addon"
 DIST_DIR = ROOT / "dist"
 MANIFEST_PATH = SRC_DIR / "blender_manifest.toml"
+LICENSE_PATH = SRC_DIR / "LICENSE.txt"
 
 
 def _read_manifest() -> dict:
@@ -49,9 +50,15 @@ def build() -> pathlib.Path:
     py_files = sorted(SRC_DIR.glob("*.py"))
     if not py_files:
         raise FileNotFoundError(f"no .py files found in {SRC_DIR}")
+    if not LICENSE_PATH.exists():
+        raise FileNotFoundError(
+            f"LICENSE.txt not found: {LICENSE_PATH} — the manifest declares "
+            "GPL-3.0-or-later; the full licence text must ship in the zip."
+        )
 
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(MANIFEST_PATH, MANIFEST_PATH.name)
+        zf.write(LICENSE_PATH, LICENSE_PATH.name)
         for f in py_files:
             zf.write(f, f.name)
 
