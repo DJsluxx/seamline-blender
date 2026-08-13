@@ -1,5 +1,30 @@
 # Seamline — Non-Destructive Panel Lines for Blender
 
+> ## ⚠️ KNOWN ISSUE in v0.1.0 — read this before using it
+>
+> **On an interior edge — a seam running across a continuous surface, which is the main thing this
+> add-on is for — the groove is currently invisible.**
+>
+> The node group extrudes the selected edges downward, but it never reroutes the surrounding faces,
+> so the original surface stays intact and covers the recess. The geometry is genuinely there and at
+> exactly the depth you set; you simply cannot see it from any angle, because an unbroken face sits
+> on top of it. Only edges on a real mesh boundary (an actual hole or open edge) show a visible
+> result today.
+>
+> Measured on a 3×3 grid, depth 0.2: after the operator the mesh still has **9 faces lying flat at
+> z=0 with a total area of 4.0000 — identical to the untouched surface.** The recess is underneath
+> it.
+>
+> The fix is in `addon/nodes.py`: the `Extrude Mesh` step needs to run in FACES mode, or explicitly
+> reroute the adjacent faces, so the surface actually opens along the seam.
+>
+> **How this got shipped, recorded honestly:** the test harness asserts that a modifier and an edge
+> attribute are created, that parameters stay editable, and that vertex positions land at the
+> requested depth — and all of that is true. None of it asserts that the result is *visible*. The
+> defect was found by rendering the tool's output and looking at it, which no automated check here
+> was doing. A vertex at the right coordinate is not the same as a groove you can see, and this
+> project's tests could not tell the difference.
+
 Seamline adds one operator: select an edge loop on a hard-surface mesh,
 run **Panel Line**, and get a re-editable, non-destructive groove along
 it — a "Panel Line" **Geometry Nodes** modifier with Depth / Width /
