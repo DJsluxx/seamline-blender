@@ -13,9 +13,11 @@ wheels = []
 # Runs fully offline, touches only the current scene's mesh/object data.
 permissions = {}
 
-# Tested against Blender 4.2.16 LTS and 5.2.0 LTS on this machine (see
-# README "Compatibility"). Do not lower this without re-running
-# tests/run_multi_version_tests.ps1 against the older target first.
+# Tested against Blender 4.2.16 LTS and 5.2.0 LTS on this machine — both
+# the headless harness (tests/test_harness.py) and the windowed undo test
+# (tests/test_undo.py) pass on both, run via scripts/run_all_tests.ps1. See
+# README "Compatibility". Do not lower this without re-running that script
+# against the older target first and pasting the passing output.
 blender_version_min = "4.2.0"
 
 license = [
