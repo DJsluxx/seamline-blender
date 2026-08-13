@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .venv/
 *.blend1
+
+# Marketing renders are work-in-progress; framing not yet sellable (see vibe-org state maintenance_queue)
+marketing/
